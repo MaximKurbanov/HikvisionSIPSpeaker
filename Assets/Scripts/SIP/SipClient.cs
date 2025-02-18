@@ -3,6 +3,7 @@ using SIPSorcery.SIP;
 using System.Net;
 using UnityEngine;
 using SIPSorcery.Net;
+using System.Text.RegularExpressions;
 
 public class SipClient : MonoBehaviour
 {
@@ -38,7 +39,7 @@ public class SipClient : MonoBehaviour
         {
             Debug.Log($"{sipRequest.Method} {sipRequest.Body} \n{localSIPEndPoint} {remoteEndPoint}");
 
-            SIPResponse okResponse = SIPResponse.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Ok, null);
+            var okResponse = SIPResponse.GetResponse(sipRequest, SIPResponseStatusCodesEnum.Ok, null);
             await sipTransport.SendResponseAsync(okResponse).ConfigureAwait(false);
             if (sipRequest.Method == SIPMethodsEnum.BYE && sipClientUserAgent.IsUACAnswered)
             {
@@ -78,7 +79,6 @@ public class SipClient : MonoBehaviour
                 if (resp.Body != null)
                 {
                     var result = rtpSession.SetRemoteDescription(SdpType.answer, SDP.ParseSDPDescription(resp.Body));
-                    new SDP();
                     if (result == SetDescriptionResultEnum.OK)
                     {
                         await rtpSession.Start().ConfigureAwait(false);
@@ -99,8 +99,7 @@ public class SipClient : MonoBehaviour
 
                 if (resp.Body != null)
                 {
-                    // https://github.com/sipsorcery-org/sipsorcery/issues/1329
-                    var answerSdp = SDP.ParseSDPDescription(resp.Body.Replace("m=audio 30000/2 RTP/AVP", "m=audio 30000 RTP/AVP"));
+                    var answerSdp = ParseSdp(resp.Body);
                     Debug.Log($"Answer: {resp.Body}");
                     var result = rtpSession.SetRemoteDescription(SdpType.answer, answerSdp);
                     Debug.Log(result);
@@ -126,6 +125,30 @@ public class SipClient : MonoBehaviour
                 Debug.Log($"{sipClientUserAgent.CallDescriptor.To} Answered: {resp.StatusCode} {resp.ReasonPhrase}.");
             }
         };
+    }
+
+    private static SDP ParseSdp(string sdpDescription)
+    {
+        var modifiedSdpDescription = IgnorePortCount(sdpDescription);
+
+        // Parse the modified SDP description
+        var answerSdp = SDP.ParseSDPDescription(modifiedSdpDescription);
+        return answerSdp;
+    }
+
+    /// <summary>
+    /// https://github.com/sipsorcery-org/sipsorcery/issues/1329
+    /// </summary>
+    /// <param name="sdpDescription"></param>
+    /// <returns></returns>
+    private static string IgnorePortCount(string sdpDescription)
+    {
+        // Regular expression to match the audio line with port and count
+        var pattern = @"m=audio (\d+)(?:/\d+)? ";
+        var replacement = "m=audio $1 ";
+
+        // Replace the matched pattern with the desired format
+        return Regex.Replace(sdpDescription, pattern, replacement);
     }
 
     public void Hangup() => HangupAndDisposeCall();
